@@ -110,4 +110,12 @@ function run(p: Uint8Array, inp: Uint8Array) {
   }
 }
 
-export { run };
+
+const I = process.env.MAKEFUN_INPUT_DIR ?? '/input';
+const O = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+for (const id of RC(I).sort()) {
+  const r = run(new Uint8Array(FC(JC(I, id, 'program.bin'))), new Uint8Array(FC(JC(I, id, 'input.bin'))));
+  MC(JC(O, id), { recursive: true });
+  WC(JC(O, id, 'stdout.bin'), r.out);
+  WC(JC(O, id, 'exit.txt'), `${r.code}\n`);
+}
