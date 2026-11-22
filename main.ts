@@ -1,3 +1,4 @@
+// make.fun tiny-stack-vm entry: full tiny stack ISA, 4.4 kB
 import { mkdirSync as MC, readdirSync as RC, readFileSync as FC, writeFileSync as WC } from 'node:fs';
 import { join as JC } from 'node:path';
 
