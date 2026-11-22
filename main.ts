@@ -1,257 +1,70 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-
-const INPUT_DIR = process.env.MAKEFUN_INPUT_DIR ?? '/input'
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output'
-
-const IMM = new Uint8Array(256)
-const POPS = new Uint8Array(256)
-const PUSHES = new Uint8Array(256)
-const KNOWN = new Set<number>()
-
-function op(code: number, imm: number, pops: number, pushes: number): void {
-  IMM[code] = imm
-  POPS[code] = pops
-  PUSHES[code] = pushes
-  KNOWN.add(code)
+// tiny stack ISA v1 interpreter: one run answers the whole set
+import{readdirSync as D,readFileSync as F,mkdirSync as K,writeFileSync as W}from'node:fs'
+const A=process.env.MAKEFUN_INPUT_DIR||'/input',B=process.env.MAKEFUN_OUTPUT_DIR||'/output'
+const V=[0,1,2,3,4,5,6,7,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,32,33,34,48,49,50,51,52,64,65,80,81,82,83]
+const S='000101401010012022023033021021021021021021021011021021021011021021021021021021200210210200000011020010010001010'
+const T=new Int32Array(256).fill(-1),STEP=1e6
+for(let i=0;i<V.length;i++){const q=S.substr(i*3,3)
+T[V[i]]=+q[0]*256+ +q[1]*16+ +q[2]}
+function run(P,I){
+const n=P.length
+const s=new Int32Array(256),k=new Int32Array(64),m=new Int32Array(256),o=new Uint8Array(65536)
+let sp=0,cp=0,ol=0,ip=0,pc=0,st=0,e=255
+try{for(;;){
+if(st===STEP)throw 10
+if(pc<0||pc>=n)throw 9
+const c=P[pc],t=T[c]
+if(t<0)throw 5
+const im=t>>8&15,x=pc+1+im,po=t>>4&15,pu=t&15
+if(pc+im>=n)throw 9
+st++
+if(sp<po)throw 2
+if(sp-po+pu>256)throw 3
+pc=x
+switch(c){
+case 0:throw 0
+case 1:s[sp++]=(P[x-1]<<24)>>24;break
+case 2:s[sp++]=P[x-4]|P[x-3]<<8|P[x-2]<<16|P[x-1]<<24;break
+case 3:sp--;break
+case 4:s[sp]=s[sp-1];sp++;break
+case 5:{const a=s[sp-1];s[sp-1]=s[sp-2];s[sp-2]=a;break}
+case 6:s[sp]=s[sp-2];sp++;break
+case 7:{const a=s[sp-3];s[sp-3]=s[sp-2];s[sp-2]=s[sp-1];s[sp-1]=a;break}
+case 48:{const r=(P[x-2]|P[x-1]<<8)<<16>>16;pc=x+r;break}
+case 49:case 50:{const r=(P[x-2]|P[x-1]<<8)<<16>>16,v=s[--sp];if(c==49?v===0:v!==0)pc=x+r;break}
+case 51:if(cp==64)throw 7;k[cp++]=x;pc=P[x-2]|P[x-1]<<8;break
+case 52:if(!cp)throw 8;pc=k[--cp];break
+case 23:s[sp-1]=-s[sp-1]|0;break
+case 27:s[sp-1]=~s[sp-1];break
+case 64:{const a=s[sp-1];if(a<0||a>255)throw 6;s[sp-1]=m[a];break}
+case 65:{const a=s[sp-1],v=s[sp-2];if(a<0||a>255)throw 6;m[a]=v;sp-=2;break}
+case 80:{const q=''+s[sp-1];if(ol+q.length>65536)throw 11;sp--;for(let i=0;i<q.length;i++)o[ol++]=q.charCodeAt(i);break}
+case 81:if(ol==65536)throw 11;o[ol++]=s[--sp]&255;break
+case 82:s[sp++]=ip<I.length?I[ip++]:-1;break
+case 83:throw s[--sp]&255
+default:{const b=s[sp-1],a=s[sp-2];let r
+if(c==16)r=a+b|0
+else if(c==17)r=a-b|0
+else if(c==18)r=Math.imul(a,b)
+else if(c==19){if(!b)throw 4;r=a==-2147483648&&b==-1?a:a/b|0}
+else if(c==20){if(!b)throw 4;r=b==-1?0:a%b|0}
+else if(c==21){if(!b)throw 4;r=Math.floor((a>>>0)/(b>>>0))|0}
+else if(c==22){if(!b)throw 4;r=(a>>>0)%(b>>>0)|0}
+else if(c==23)r=-a|0
+else if(c==24)r=a&b
+else if(c==25)r=a|b
+else if(c==26)r=a^b
+else if(c==27)r=~a
+else if(c==28)r=a<<(b&31)
+else if(c==29)r=a>>(b&31)
+else if(c==30)r=a>>>(b&31)|0
+else if(c==32)r=a===b?1:0
+else if(c==33)r=a<b?1:0
+else r=(a>>>0)<(b>>>0)?1:0
+sp-=2;s[sp++]=r;break}
+}}}catch(q){e=q}
+return[o.slice(0,ol),e]
 }
-
-op(0x00, 0, 0, 0)
-op(0x01, 1, 0, 1)
-op(0x02, 4, 0, 1)
-op(0x03, 0, 1, 0)
-op(0x04, 0, 1, 2)
-op(0x05, 0, 2, 2)
-op(0x06, 0, 2, 3)
-op(0x07, 0, 3, 3)
-op(0x17, 0, 1, 1)
-op(0x1b, 0, 1, 1)
-for (const c of [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
-                 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e,
-                 0x20, 0x21, 0x22]) op(c, 0, 2, 1)
-op(0x30, 2, 0, 0)
-op(0x31, 2, 1, 0)
-op(0x32, 2, 1, 0)
-op(0x33, 2, 0, 0)
-op(0x34, 0, 0, 0)
-op(0x40, 0, 1, 1)
-op(0x41, 0, 2, 0)
-op(0x50, 0, 1, 0)
-op(0x51, 0, 1, 0)
-op(0x52, 0, 0, 1)
-op(0x53, 0, 1, 0)
-
-const STEP_LIMIT = 1000000
-const OUT_LIMIT = 65536
-const STACK_LIMIT = 256
-const CALL_LIMIT = 64
-
-const DECIMAL = new TextEncoder()
-
-type Result = { out: Uint8Array; code: number }
-
-function execute(prog: Uint8Array, input: Uint8Array): Result {
-  const n = prog.length
-  const stack = new Int32Array(STACK_LIMIT)
-  const calls = new Int32Array(CALL_LIMIT)
-  const mem = new Int32Array(256)
-  const outBuf = new Uint8Array(OUT_LIMIT)
-
-  let sp = 0
-  let cp = 0
-  let outLen = 0
-  let ip = 0
-  let pc = 0
-  let steps = 0
-
-  const done = (code: number): Result => ({ out: outBuf.slice(0, outLen), code })
-
-  for (;;) {
-    if (steps === STEP_LIMIT) return done(10)
-    if (pc < 0 || pc >= n) return done(9)
-
-    const ins = prog[pc]
-    if (!KNOWN.has(ins)) return done(5)
-
-    const extra = IMM[ins]
-    if (pc + extra >= n) return done(9)
-
-    steps += 1
-    const next = pc + 1 + extra
-    const pops = POPS[ins]
-    const pushes = PUSHES[ins]
-    if (sp < pops) return done(2)
-    if (sp - pops + pushes > STACK_LIMIT) return done(3)
-    pc = next
-
-    switch (ins) {
-      case 0x00:
-        return done(0)
-
-      case 0x01:
-        stack[sp] = (prog[next - 1] << 24) >> 24
-        sp += 1
-        break
-
-      case 0x02:
-        stack[sp] = prog[next - 4] | (prog[next - 3] << 8) | (prog[next - 2] << 16) | (prog[next - 1] << 24)
-        sp += 1
-        break
-
-      case 0x03:
-        sp -= 1
-        break
-
-      case 0x04:
-        stack[sp] = stack[sp - 1]
-        sp += 1
-        break
-
-      case 0x05: {
-        const t = stack[sp - 1]
-        stack[sp - 1] = stack[sp - 2]
-        stack[sp - 2] = t
-        break
-      }
-
-      case 0x06:
-        stack[sp] = stack[sp - 2]
-        sp += 1
-        break
-
-      case 0x07: {
-        const a = stack[sp - 3]
-        stack[sp - 3] = stack[sp - 2]
-        stack[sp - 2] = stack[sp - 1]
-        stack[sp - 1] = a
-        break
-      }
-
-      case 0x17:
-        stack[sp - 1] = -stack[sp - 1] | 0
-        break
-
-      case 0x1b:
-        stack[sp - 1] = ~stack[sp - 1]
-        break
-
-      case 0x30:
-      case 0x31:
-      case 0x32: {
-        const rel = ((prog[next - 2] | (prog[next - 1] << 8)) << 16) >> 16
-        if (ins === 0x30) {
-          pc = next + rel
-        } else {
-          const v = stack[--sp]
-          if (ins === 0x31 ? v === 0 : v !== 0) pc = next + rel
-        }
-        break
-      }
-
-      case 0x33:
-        if (cp === CALL_LIMIT) return done(7)
-        calls[cp] = next
-        cp += 1
-        pc = prog[next - 2] | (prog[next - 1] << 8)
-        break
-
-      case 0x34:
-        if (cp === 0) return done(8)
-        cp -= 1
-        pc = calls[cp]
-        break
-
-      case 0x40: {
-        const addr = stack[sp - 1]
-        if (addr < 0 || addr > 255) return done(6)
-        stack[sp - 1] = mem[addr]
-        break
-      }
-
-      case 0x41: {
-        const addr = stack[sp - 1]
-        const v = stack[sp - 2]
-        if (addr < 0 || addr > 255) return done(6)
-        mem[addr] = v
-        sp -= 2
-        break
-      }
-
-      case 0x50: {
-        // decimal ASCII, sign only when negative, no padding, no newline
-        const text = String(stack[sp - 1])
-        const bytes = DECIMAL.encode(text)
-        if (outLen + bytes.length > OUT_LIMIT) return done(11)
-        sp -= 1
-        outBuf.set(bytes, outLen)
-        outLen += bytes.length
-        break
-      }
-
-      case 0x51:
-        if (outLen + 1 > OUT_LIMIT) return done(11)
-        outBuf[outLen++] = stack[sp - 1] & 255
-        sp -= 1
-        break
-
-      case 0x52:
-        stack[sp] = ip < input.length ? input[ip++] : -1
-        sp += 1
-        break
-
-      case 0x53:
-        return done(stack[sp - 1] & 255)
-
-      default: {
-        const b = stack[sp - 1]
-        const a = stack[sp - 2]
-        let r = 0
-        if (ins === 0x10) r = (a + b) | 0
-        else if (ins === 0x11) r = (a - b) | 0
-        else if (ins === 0x12) r = Math.imul(a, b)
-        else if (ins === 0x13) {
-          if (b === 0) return done(4)
-          r = a === -2147483648 && b === -1 ? a : (a / b) | 0
-        } else if (ins === 0x14) {
-          if (b === 0) return done(4)
-          r = b === -1 ? 0 : (a % b) | 0
-        } else if (ins === 0x15) {
-          if (b === 0) return done(4)
-          r = Math.floor((a >>> 0) / (b >>> 0)) | 0
-        } else if (ins === 0x16) {
-          if (b === 0) return done(4)
-          r = ((a >>> 0) % (b >>> 0)) | 0
-        } else if (ins === 0x18) r = a & b
-        else if (ins === 0x19) r = a | b
-        else if (ins === 0x1a) r = a ^ b
-        else if (ins === 0x1c) r = a << (b & 31)
-        else if (ins === 0x1d) r = a >> (b & 31)
-        else if (ins === 0x1e) r = (a >>> (b & 31)) | 0
-        else if (ins === 0x20) r = a === b ? 1 : 0
-        else if (ins === 0x21) r = a < b ? 1 : 0
-        else if (ins === 0x22) r = (a >>> 0) < (b >>> 0) ? 1 : 0
-        sp -= 2
-        stack[sp] = r
-        sp += 1
-        break
-      }
-    }
-  }
-}
-
-for (const id of readdirSync(INPUT_DIR).sort()) {
-  const dir = join(INPUT_DIR, id)
-  let prog: Uint8Array
-  let input: Uint8Array
-  try {
-    prog = readFileSync(join(dir, 'program.bin'))
-    input = readFileSync(join(dir, 'input.bin'))
-  } catch {
-    continue
-  }
-  const result = execute(prog, input)
-  const outDir = join(OUTPUT_DIR, id)
-  mkdirSync(outDir, { recursive: true })
-  writeFileSync(join(outDir, 'stdout.bin'), result.out)
-  writeFileSync(join(outDir, 'exit.txt'), result.code + '\n')
-}
+for(const id of D(A).sort()){const d=A+'/'+id;let P,I
+try{P=F(d+'/program.bin');I=F(d+'/input.bin')}catch{continue}
+const[r,e]=run(P,I);K(B+'/'+id,{recursive:true});W(B+'/'+id+'/stdout.bin',r);W(B+'/'+id+'/exit.txt',e+'\n')}
